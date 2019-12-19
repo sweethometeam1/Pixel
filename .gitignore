@@ -1,2 +1,7 @@
 **/node_modules/
 **/*.log
+
+# Build files
+RealisticRendering
+Manifest_NonUFSFiles_Win64.txt
+RealisticRendering.exe
