@@ -7,3 +7,4 @@ title TURN
 Powershell.exe -executionpolicy unrestricted -File Start_AWS_TURNServer.ps1
 
 popd
+exit
