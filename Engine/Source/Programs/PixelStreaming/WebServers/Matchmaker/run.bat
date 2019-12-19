@@ -3,12 +3,12 @@
 
 pushd %~dp0
 
-call setup.bat
+REM call setup.bat
 
 title Matchmaker
 
 ::Run node server
-node matchmaker %*
+node matchmaker --httpPort 80 %*
 
 popd
 pause
