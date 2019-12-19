@@ -124,11 +124,11 @@ function setLoadedSignallingConnection(httpPort, streamerPort) {
 	Signalling.connections[i].loading = false;
 }
 
-function startNewCirrusServer(res) {
+function startNewCirrusServer(req, res) {
 	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer -RenderOffScreen -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
 	exec('start "" "..\\SignallingWebServer\\runWithParams.bat" '+ Signalling.httpPort +' '+ Signalling.streamerPort);
 
-	res.redirect(`http://3.15.137.63:${Signalling.httpPort}/`);
+	res.redirect(`http://${req.hostname}:${Signalling.httpPort}/`);
 
 	addSignallingConnection(Signalling.httpPort, Signalling.streamerPort);
 	incrementSignallingPorts();
@@ -194,7 +194,7 @@ app.get('/', (req, res) => {
 			res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/`);
 			console.log(`Redirect to ${cirrusServer.address}:${cirrusServer.port}`);
 		} else {
-			startNewCirrusServer(res);
+			startNewCirrusServer(req, res);
 			// sendRetryResponse(res);
 		}
 	}
@@ -208,7 +208,7 @@ app.get('/custom_html/:htmlFilename', (req, res) => {
 			res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/custom_html/${req.params.htmlFilename}`);
 			console.log(`Redirect to ${cirrusServer.address}:${cirrusServer.port}`);
 		} else {
-			startNewCirrusServer(res);
+			startNewCirrusServer(req, res);
 			// sendRetryResponse(res);
 		}
 	}
