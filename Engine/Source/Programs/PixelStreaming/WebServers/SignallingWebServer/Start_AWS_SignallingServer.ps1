@@ -1,6 +1,7 @@
 # Copyright 1998-2018 Epic Games, Inc. All Rights Reserved.
 
-$PublicIp = Invoke-WebRequest -Uri "http://169.254.169.254/latest/meta-data/public-ipv4"
+# $PublicIp = Invoke-WebRequest -Uri "http://169.254.169.254/latest/meta-data/public-ipv4"
+$PublicIp = (Invoke-WebRequest -uri "http://ifconfig.me/ip").Content
 
 Write-Output "Public IP: $PublicIp"
 

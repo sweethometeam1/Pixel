@@ -19,7 +19,8 @@ function AddUser{
 
 }
 
-$LocalIp = Invoke-WebRequest -Uri "http://169.254.169.254/latest/meta-data/local-ipv4"
+# $LocalIp = Invoke-WebRequest -Uri "http://169.254.169.254/latest/meta-data/local-ipv4"
+$LocalIp = (Test-Connection -ComputerName (hostname) -Count 1  | Select IPV4Address).IPV4Address.IPAddressToString
 Write-Output "Private IP: $LocalIp"
 
 
