@@ -8,7 +8,9 @@ REM call setup.bat
 title Matchmaker
 
 ::Run node server
-node matchmaker --httpPort 80 %*
+
+Powershell.exe -executionpolicy unrestricted -File Start_Matchmaker.ps1
+REM node matchmaker --httpPort 80 %*
 
 popd
 pause

@@ -1,9 +1,10 @@
 // Copyright 1998-2019 Epic Games, Inc. All Rights Reserved.
 
-var httpPort = 90;
-var matchmakerPort = 9999;
-
 const argv = require('yargs').argv;
+
+let httpPort = 80;
+let matchmakerPort = 9999;
+let publicIp = argv.publicIp;
 
 const express = require('express');
 const app = express();
@@ -128,7 +129,7 @@ function startNewCirrusServer(req, res) {
 	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer -RenderOffScreen -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
 	exec('start "" "..\\SignallingWebServer\\runWithParams.bat" '+ Signalling.httpPort +' '+ Signalling.streamerPort);
 
-	res.redirect(`http://${req.hostname}:${Signalling.httpPort}/`);
+	res.redirect(`http://${publicIp}:${Signalling.httpPort}/`);
 
 	addSignallingConnection(Signalling.httpPort, Signalling.streamerPort);
 	incrementSignallingPorts();
