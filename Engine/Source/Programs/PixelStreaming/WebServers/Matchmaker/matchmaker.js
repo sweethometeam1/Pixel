@@ -4,7 +4,8 @@ const argv = require('yargs').argv;
 
 let httpPort = 80;
 let matchmakerPort = 9999;
-let publicIp = argv.publicIp;
+const publicIp = argv.publicIp;
+const local = argv.local;
 
 const express = require('express');
 const app = express();
@@ -13,12 +14,51 @@ const { exec } = require('child_process');
 
 // startsAt
 const Signalling = {
-	httpPort: 81,
+	httpPort: 1025,
 	streamerPort: 8881,
 	loading: false,
 	connections: []
 }
 
+// events
+const EventEmitter = require('events');
+const Events = {
+	emmiter: new EventEmitter,
+	onCirrusConnected: 'onCirrusConnected',
+	onCirrusDisonnected: 'onCirrusDisonnected',
+	onClientConnected: 'onClientConnected',
+	onClientDisonnected: 'onClientDisonnected'
+};
+
+Events.emmiter.on(Events.onCirrusConnected, httpPort => {
+	setLoadedSignallingConnection(httpPort);
+});
+
+Events.emmiter.on(Events.onCirrusDisonnected, httpPort => {
+	// updating Signalling state
+	const i = getSignallingConnectionIndex(httpPort);
+	const connection = Signalling.connections[i];
+
+	Signalling.connections.splice(i, 1);
+
+	if (Signalling.connections.length === 0) {
+		resetSignallingPorts();
+	// check if it was the last connection to dicrement it
+	} else if (connection.httpPort === Signalling.httpPort-1 && connection.streamerPort === Signalling.streamerPort-1) {
+		decrementSignallingPorts();
+	}
+	console.log('connections', Signalling.connections.length);
+});
+
+Events.emmiter.on(Events.onClientConnected, httpPort => {
+	// 
+});
+
+Events.emmiter.on(Events.onClientDisonnected, httpPort => {
+	removeSignallingConnection(httpPort);
+});
+
+// functions
 function getSignallingConnectionIndex(httpPort, streamerPort) {
 	let i = null;
 
@@ -27,7 +67,7 @@ function getSignallingConnectionIndex(httpPort, streamerPort) {
 	} else if (streamerPort) {
 		i = Signalling.connections.map(connection => connection.streamerPort).indexOf(streamerPort);
 	} else {
-		console.error('setLoadedSignallingConnection: please provide httpPort or streamerPort');
+		console.error('getSignallingConnectionIndex: please provide httpPort or streamerPort');
 	}
 
 	return i
@@ -52,7 +92,7 @@ function decrementSignallingPorts() {
 }
 
 function resetSignallingPorts() {
-	Signalling.httpPort = 81;
+	Signalling.httpPort = 1025;
 	Signalling.streamerPort = 8881;
 }
 
@@ -100,18 +140,8 @@ function removeSignallingConnection(httpPort, streamerPort) {
 	console.log(connection);
 
 	killPort(connection.streamerPort, () => {
-		killPort(connection.httpPort, () => {
-			Signalling.connections.splice(i, 1);
-			console.log('connections', Signalling.connections.length);
-			if (Signalling.connections.length === 0) {
-				resetSignallingPorts();
-			// check if it was the last connection to dicrement it
-			} else if (connection.httpPort === Signalling.httpPort-1 && connection.streamerPort === Signalling.streamerPort-1) {
-				decrementSignallingPorts();
-			}
-		});
+		killPort(connection.httpPort);
 	});
-
 }
 
 function setLoadedSignallingConnection(httpPort, streamerPort) {
@@ -126,7 +156,7 @@ function setLoadedSignallingConnection(httpPort, streamerPort) {
 }
 
 function startNewCirrusServer(req, res) {
-	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer -RenderOffScreen -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
+	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer ' +(local ? '' : '-RenderOffScreen') + ' -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
 	exec('start "" "..\\SignallingWebServer\\runWithParams.bat" '+ Signalling.httpPort +' '+ Signalling.streamerPort);
 
 	res.redirect(`http://${publicIp}:${Signalling.httpPort}/`);
@@ -192,7 +222,11 @@ app.get('/', (req, res) => {
 	if (!Signalling.loading) {
 		cirrusServer = getAvailableCirrusServer();
 		if (cirrusServer != undefined) {
-			res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/`);
+			if (local) {
+				res.redirect(`http://localhost:${cirrusServer.port}/`);
+			} else {
+				res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/`);
+			}
 			console.log(`Redirect to ${cirrusServer.address}:${cirrusServer.port}`);
 		} else {
 			startNewCirrusServer(req, res);
@@ -243,23 +277,23 @@ const matchmaker = net.createServer((connection) => {
 				numConnectedClients: 0
 			};
 			cirrusServers.set(connection, cirrusServer);
-			console.log(`Cirrus server ${cirrusServer.address}:${cirrusServer.port} connected to Matchmaker`);
 
-			// 
-			setLoadedSignallingConnection(cirrusServer.port);
+			Events.emmiter.emit(Events.onCirrusConnected, cirrusServer.port);
+			console.log(`Cirrus server ${cirrusServer.address}:${cirrusServer.port} connected to Matchmaker`);
 		} else if (message.type === 'clientConnected') {
 			// A client connects to a Cirrus server.
 			cirrusServer = cirrusServers.get(connection);
 			cirrusServer.numConnectedClients++;
+
+			Events.emmiter.emit(Events.onClientConnected, cirrusServer.port);
 			console.log(`Client connected to Cirrus server ${cirrusServer.address}:${cirrusServer.port}`);
 		} else if (message.type === 'clientDisconnected') {
 			// A client disconnects from a Cirrus server.
 			cirrusServer = cirrusServers.get(connection);
 			cirrusServer.numConnectedClients--;
-			console.log(`Client disconnected from Cirrus server ${cirrusServer.address}:${cirrusServer.port}`);
 
-			// 
-			removeSignallingConnection(cirrusServer.port);
+			Events.emmiter.emit(Events.onClientDisonnected, cirrusServer.port);
+			console.log(`Client disconnected from Cirrus server ${cirrusServer.address}:${cirrusServer.port}`);
 		} else {
 			console.log('ERROR: Unknown data: ' + JSON.stringify(message));
 			disconnect(connection);
@@ -269,6 +303,7 @@ const matchmaker = net.createServer((connection) => {
 	// A Cirrus server disconnects from this Matchmaker server.
 	connection.on('error', () => {
 		cirrusServers.delete(connection);
+		Events.emmiter.emit(Events.onCirrusDisonnected, cirrusServer.port);
 		console.log(`Cirrus server ${cirrusServer.address}:${cirrusServer.port} disconnected from Matchmaker`);
 	});
 });
