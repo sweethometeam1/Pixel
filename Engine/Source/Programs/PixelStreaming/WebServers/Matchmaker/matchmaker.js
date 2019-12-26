@@ -181,8 +181,9 @@ function killPort(port, cb) {
 
 function removeSignallingConnection(httpPort, streamerPort) {
 	console.info('removeSignallingConnection', {httpPort, streamerPort});
-	killPort(streamerPort);
-	killPort(httpPort);
+	killPort(streamerPort, () => {
+		killPort(httpPort);
+	});
 }
 
 function setLoadedSignallingConnection(httpPort, streamerPort) {
@@ -199,7 +200,7 @@ function startNewCirrusServer(req, res) {
 	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer -RenderOffScreen -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
 	exec('start "" "..\\SignallingWebServer\\runWithParams.bat" '+ Signalling.httpPort +' '+ Signalling.streamerPort);
 
-	res.redirect(`http://${publicIp}:${Signalling.httpPort}/`);
+	// res.redirect(`http://${publicIp}:${Signalling.httpPort}/`);
 
 	addSignallingConnection(Signalling.httpPort, Signalling.streamerPort);
 	incrementSignallingPorts();
@@ -257,6 +258,17 @@ function sendRetryResponse(res) {
 	</script>`);
 }
 
+function sendLoadingResponse(res) {
+	res.send(`
+		Server is loading...
+		<script>
+			setInterval(function() {
+				window.location.reload(1);
+			}, 1000);
+		</script>
+	`);
+}
+
 // Handle standard URL.
 app.get('/', (req, res) => {
 	if (!Signalling.loading) {
@@ -276,9 +288,12 @@ app.get('/', (req, res) => {
 			cirrusServer.numConnectedClients++
 			console.log(`Redirect to ${link}`);
 		} else {
+			sendLoadingResponse(res);
 			startNewCirrusServer(req, res);
 			// sendRetryResponse(res);
 		}
+	} else {
+		sendLoadingResponse(res)
 	}
 });
 
