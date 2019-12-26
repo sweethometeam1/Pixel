@@ -51,11 +51,24 @@ Events.emmiter.on(Events.onCirrusDisonnected, httpPort => {
 });
 
 Events.emmiter.on(Events.onClientConnected, httpPort => {
+	const connection = getSignallingConnection(httpPort);
+	
+	connection.clientConnected = true;
+	console.log('clientConnected', connection.clientConnected);
 	// 
 });
 
 Events.emmiter.on(Events.onClientDisonnected, httpPort => {
-	removeSignallingConnection(httpPort);
+	const connection = getSignallingConnection(httpPort);
+	
+	connection.clientConnected = false;
+	console.log('clientConnected', connection.clientConnected);
+
+	setTimeout(() => {
+		if (!connection.clientConnected) {
+			removeSignallingConnection(httpPort);
+		}
+	}, 30 * 1000);
 });
 
 // functions
@@ -71,6 +84,17 @@ function getSignallingConnectionIndex(httpPort, streamerPort) {
 	}
 
 	return i
+}
+
+function getSignallingConnection(httpPort, streamerPort) {
+	const i = getSignallingConnectionIndex(httpPort, streamerPort);
+	let connection = null;
+
+	if (i !== null) {
+		connection = Signalling.connections[i];
+	}
+
+	return connection
 }
 
 function addSignallingConnection(httpPort, streamerPort) {
@@ -226,7 +250,8 @@ app.get('/', (req, res) => {
 				res.redirect(`http://localhost:${cirrusServer.port}/`);
 			} else {
 				res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/`);
-			}
+			};
+			cirrusServer.numConnectedClients++
 			console.log(`Redirect to ${cirrusServer.address}:${cirrusServer.port}`);
 		} else {
 			startNewCirrusServer(req, res);

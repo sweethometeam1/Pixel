@@ -233,10 +233,10 @@ function showConnectOverlay() {
 	startText.id = 'playButton';
 	startText.innerHTML = 'Click to start';
 
-	setOverlay('clickableState', startText, event => {
+	// setOverlay('clickableState', startText, event => {
 		connect();
 		startAfkWarningTimer();
-	});
+	// });
 }
 
 function showTextOverlay(text) {
