@@ -5,6 +5,7 @@ const argv = require('yargs').argv;
 let httpPort = 80;
 let matchmakerPort = 9999;
 const publicIp = argv.publicIp;
+const localIp = argv.localIp;
 const local = argv.local;
 
 const express = require('express');
@@ -32,9 +33,11 @@ const Events = {
 
 Events.emmiter.on(Events.onCirrusConnected, httpPort => {
 	setLoadedSignallingConnection(httpPort);
+	console.log(Signalling);
 });
 
 Events.emmiter.on(Events.onCirrusDisonnected, httpPort => {
+	console.info('onCirrusDisonnected', {httpPort});
 	// updating Signalling state
 	const i = getSignallingConnectionIndex(httpPort);
 	const connection = Signalling.connections[i];
@@ -44,31 +47,54 @@ Events.emmiter.on(Events.onCirrusDisonnected, httpPort => {
 	if (Signalling.connections.length === 0) {
 		resetSignallingPorts();
 	// check if it was the last connection to dicrement it
-	} else if (connection.httpPort === Signalling.httpPort-1 && connection.streamerPort === Signalling.streamerPort-1) {
-		decrementSignallingPorts();
+	} else if (connection) {
+		if (connection.httpPort === Signalling.httpPort-1 && connection.streamerPort === Signalling.streamerPort-1) {
+			decrementSignallingPorts();
+		}
+	} else {
+		console.log('onCirrusDisonnected: no connection');
 	}
+
 	console.log('connections', Signalling.connections.length);
+	console.log(Signalling);
 });
 
 Events.emmiter.on(Events.onClientConnected, httpPort => {
 	const connection = getSignallingConnection(httpPort);
 	
-	connection.clientConnected = true;
-	console.log('clientConnected', connection.clientConnected);
+	if (connection) {
+		connection.clientConnected = true;
+		console.log('clientConnected', connection.clientConnected);
+	} else {
+		console.log('onClientConnected: no connection');
+	}
+
+	console.log(Signalling);
 	// 
 });
 
 Events.emmiter.on(Events.onClientDisonnected, httpPort => {
-	const connection = getSignallingConnection(httpPort);
-	
-	connection.clientConnected = false;
-	console.log('clientConnected', connection.clientConnected);
+	let i = getSignallingConnectionIndex(httpPort);
+	let connection = Signalling.connections[i];
 
-	setTimeout(() => {
-		if (!connection.clientConnected) {
-			removeSignallingConnection(httpPort);
-		}
-	}, 30 * 1000);
+	if (connection) {
+		connection.clientConnected = false;
+		console.log('clientConnected', connection.clientConnected);
+
+		setTimeout(() => {
+			i = getSignallingConnectionIndex(httpPort);
+			connection = Signalling.connections[i];
+			console.log('inTimeout', {i, connection, httpPort})
+
+			if (!connection.clientConnected) {
+				removeSignallingConnection(connection.httpPort, connection.streamerPort);
+			}
+		}, 30 * 1000);
+	} else {
+		console.log('onClientDisonnected: no connection');
+	}
+
+	console.log(Signalling);
 });
 
 // functions
@@ -98,6 +124,7 @@ function getSignallingConnection(httpPort, streamerPort) {
 }
 
 function addSignallingConnection(httpPort, streamerPort) {
+	Signalling.loading = true;
 	Signalling.connections.push({
 		httpPort,
 		streamerPort,
@@ -153,34 +180,23 @@ function killPort(port, cb) {
 }
 
 function removeSignallingConnection(httpPort, streamerPort) {
-	const i = getSignallingConnectionIndex(httpPort, streamerPort);
-
-	if (i === null) {
-		return
-	}
-
-	const connection = Signalling.connections[i];
-
-	console.log(connection);
-
-	killPort(connection.streamerPort, () => {
-		killPort(connection.httpPort);
-	});
+	console.info('removeSignallingConnection', {httpPort, streamerPort});
+	killPort(streamerPort);
+	killPort(httpPort);
 }
 
 function setLoadedSignallingConnection(httpPort, streamerPort) {
 	const i = getSignallingConnectionIndex(httpPort, streamerPort);
 
-	if (!i) {
-		return
+	if (i !== null) {
+		Signalling.connections[i].loading = false;
 	}
 
 	Signalling.loading = false;
-	Signalling.connections[i].loading = false;
 }
 
 function startNewCirrusServer(req, res) {
-	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer ' +(local ? '' : '-RenderOffScreen') + ' -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
+	exec('start "" "..\\..\\..\\..\\..\\..\\RealisticRendering.exe" -AudioMixer -RenderOffScreen -PixelStreamingIP=localhost -PixelStreamingPort='+ Signalling.streamerPort);
 	exec('start "" "..\\SignallingWebServer\\runWithParams.bat" '+ Signalling.httpPort +' '+ Signalling.streamerPort);
 
 	res.redirect(`http://${publicIp}:${Signalling.httpPort}/`);
@@ -246,13 +262,19 @@ app.get('/', (req, res) => {
 	if (!Signalling.loading) {
 		cirrusServer = getAvailableCirrusServer();
 		if (cirrusServer != undefined) {
+			let link;
+
 			if (local) {
-				res.redirect(`http://localhost:${cirrusServer.port}/`);
+				link = `http://${localIp}:${cirrusServer.port}/`;
 			} else {
-				res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/`);
+				link = `http://${cirrusServer.address}:${cirrusServer.port}/`;
 			};
+
+			res.redirect(link);
+
+			// restriction for the next users
 			cirrusServer.numConnectedClients++
-			console.log(`Redirect to ${cirrusServer.address}:${cirrusServer.port}`);
+			console.log(`Redirect to ${link}`);
 		} else {
 			startNewCirrusServer(req, res);
 			// sendRetryResponse(res);
@@ -261,18 +283,29 @@ app.get('/', (req, res) => {
 });
 
 // Handle URL with custom HTML.
-app.get('/custom_html/:htmlFilename', (req, res) => {
-	if (!Signalling.loading) {
-		cirrusServer = getAvailableCirrusServer();
-		if (cirrusServer != undefined) {
-			res.redirect(`http://${cirrusServer.address}:${cirrusServer.port}/custom_html/${req.params.htmlFilename}`);
-			console.log(`Redirect to ${cirrusServer.address}:${cirrusServer.port}`);
-		} else {
-			startNewCirrusServer(req, res);
-			// sendRetryResponse(res);
-		}
-	}
-});
+// app.get('/custom_html/:htmlFilename', (req, res) => {
+// 	if (!Signalling.loading) {
+// 		cirrusServer = getAvailableCirrusServer();
+// 		if (cirrusServer != undefined) {
+// 			let link;
+
+// 			if (local) {
+// 				link = `http://${localIp}:${cirrusServer.port}/custom_html/${req.params.htmlFilename}/`;
+// 			} else {
+// 				link = `http://${cirrusServer.address}:${cirrusServer.port}/custom_html/${req.params.htmlFilename}/`;
+// 			};
+
+// 			res.redirect(link);
+
+// 			// restriction for the next users
+// 			cirrusServer.numConnectedClients++
+// 			console.log(`Redirect to ${link}`);
+// 		} else {
+// 			startNewCirrusServer(req, res);
+// 			// sendRetryResponse(res);
+// 		}
+// 	}
+// });
 
 //
 // Connection to Cirrus.
@@ -327,9 +360,10 @@ const matchmaker = net.createServer((connection) => {
 
 	// A Cirrus server disconnects from this Matchmaker server.
 	connection.on('error', () => {
-		cirrusServers.delete(connection);
-		Events.emmiter.emit(Events.onCirrusDisonnected, cirrusServer.port);
+		cirrusServer = cirrusServers.get(connection);
 		console.log(`Cirrus server ${cirrusServer.address}:${cirrusServer.port} disconnected from Matchmaker`);
+		Events.emmiter.emit(Events.onCirrusDisonnected, cirrusServer.port);
+		cirrusServers.delete(connection);
 	});
 });
 
